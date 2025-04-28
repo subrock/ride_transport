@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Submit & Track Ride Requests</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body { padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        #claimedRidesTable { margin-top: 30px; }
+        .status-pending { color: orange; }
+        .status-claimed { color: blue; }
+        .status-completed { color: green; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Submit Accessible Transportation Request</h2>
+        <form id="rideRequestForm">
+            <div class="form-group">
+                <label for="patient_name">Patient Name:</label>
+                <input type="text" class="form-control" id="patient_name" name="patient_name" required>
+            </div>
+            <div class="form-group">
+                <label for="patient_phone">Patient Phone (Optional):</label>
+                <input type="tel" class="form-control" id="patient_phone" name="patient_phone">
+            </div>
+            <div class="form-group">
+                <label for="pickup_hospital">Pickup Hospital:</label>
+                <input type="text" class="form-control" id="pickup_hospital" name="pickup_hospital" required>
+            </div>
+            <div class="form-group">
+                <label for="dropoff_hospital">Drop-off Hospital:</label>
+                <input type="text" class="form-control" id="dropoff_hospital" name="dropoff_hospital" required>
+            </div>
+            <div class="form-group">
+                <label for="pickup_datetime">Pickup Date and Time:</label>
+                <input type="datetime-local" class="form-control" id="pickup_datetime" name="pickup_datetime" required>
+            </div>
+            <div class="form-group">
+                <label for="dropoff_datetime">Estimated Drop-off Date and Time (Optional):</label>
+                <input type="datetime-local" class="form-control" id="dropoff_datetime" name="dropoff_datetime">
+            </div>
+            <button type="submit" class="btn btn-primary">Submit Request</button>
+            <div id="message" class="mt-3"></div>
+        </form>
+
+        <h2 id="claimedRidesTitle" class="mt-4">Today's Ride Status</h2>
+        <table id="claimedRidesTable" class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Request ID</th>
+                    <th>Patient Name</th>
+                    <th>Pickup Time</th>
+                    <th>Drop-off Time (Est.)</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="claimedRidesBody">
+                <tr><td colSpan="5">Loading today's ride status...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('rideRequestForm');
+            const messageDiv = document.getElementById('message');
+            const claimedRidesBody = document.getElementById('claimedRidesBody');
+            const claimedRidesTitle = document.getElementById('claimedRidesTitle');
+            const today = new Date();
+            const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+            const todayStartISO = todayStart.toISOString().slice(0, 19).replace('T', ' ');
+            const todayEndISO = todayEnd.toISOString().slice(0, 19).replace('T', ' ');
+
+            async function fetchClaimedRides() {
+                try {
+                    const response = await fetch(`/api/requests/nurse-view?start_date=${todayStartISO}&end_date=${todayEndISO}`);
+                    const rides = await response.json();
+
+                    if (response.ok) {
+                        if (rides.length > 0) {
+                            claimedRidesBody.innerHTML = '';
+                            rides.forEach(ride => {
+                                const row = claimedRidesBody.insertRow();
+                                const pickupDate = new Date(ride.pickup_datetime).toLocaleString();
+                                const dropoffDate = ride.dropoff_datetime ? new Date(ride.dropoff_datetime).toLocaleString() : 'Not Specified';
+                                const statusClass = `status-${ride.status}`;
+                                const statusText = ride.status.charAt(0).toUpperCase() + ride.status.slice(1); // Capitalize first letter
+
+                                row.insertCell().textContent = ride.id;
+                                row.insertCell().textContent = ride.patient_name;
+                                row.insertCell().textContent = pickupDate;
+                                row.insertCell().textContent = dropoffDate;
+                                row.insertCell().innerHTML = `<span class="${statusClass}">${statusText}</span>`;
+                            });
+                        } else {
+                            claimedRidesBody.innerHTML = '<tr><td colSpan="5">No rides for today yet.</td></tr>';
+                        }
+                        claimedRidesTitle.style.display = 'block';
+                        document.getElementById('claimedRidesTable').style.display = 'table';
+                    } else {
+                        claimedRidesBody.innerHTML = `<tr><td colSpan="5" class="alert alert-danger">${rides.error || 'Failed to load ride status.'}</td></tr>`;
+                        claimedRidesTitle.style.display = 'none';
+                        document.getElementById('claimedRidesTable').style.display = 'none';
+                    }
+                } catch (error) {
+                    console.error('Error fetching claimed rides:', error);
+                    claimedRidesBody.innerHTML = '<tr><td colSpan="5" class="alert alert-danger">An unexpected error occurred while loading ride status.</td></tr>';
+                    claimedRidesTitle.style.display = 'none';
+                    document.getElementById('claimedRidesTable').style.display = 'none';
+                }
+            }
+
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+
+                const formData = new FormData(form);
+                const requestData = {};
+                formData.forEach((value, key) => {
+                    requestData[key] = value;
+                });
+
+                try {
+                    const response = await fetch('/api/requests', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(requestData),
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        messageDiv.className = 'alert alert-success';
+                        messageDiv.textContent = result.message;
+                        form.reset();
+                        fetchClaimedRides(); // Reload the ride status table after submission
+                    } else {
+                        messageDiv.className = 'alert alert-danger';
+                        messageDiv.textContent = result.error || 'Failed to submit request.';
+                    }
+                } catch (error) {
+                    console.error('Error submitting request:', error);
+                    messageDiv.className = 'alert alert-danger';
+                    messageDiv.textContent = 'An unexpected error occurred.';
+                }
+            });
+
+            // Fetch claimed rides when the page loads
+            fetchClaimedRides();
+        });
+    </script>
+</body>
+</html>
+
