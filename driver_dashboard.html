@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Driver Dashboard</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body { padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .request-card { margin-bottom: 15px; border: 1px solid #ccc; padding: 15px; border-radius: 5px; }
+        .request-card h5 { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Available Ride Requests</h2>
+        <div id="pendingRequests">
+            <p>Loading available requests...</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const pendingRequestsDiv = document.getElementById('pendingRequests');
+
+            async function fetchPendingRequests() {
+                try {
+                    const response = await fetch('/api/requests/pending');
+                    const requests = await response.json();
+
+                    if (response.ok) {
+                        if (requests.length > 0) {
+                            pendingRequestsDiv.innerHTML = '';
+                            requests.forEach(request => {
+                                const card = document.createElement('div');
+                                card.className = 'request-card';
+                                card.innerHTML = `
+                                    <h5>Request ID: ${request.id}</h5>
+                                    <p><strong>Patient:</strong> ${request.patient_name} ${request.patient_phone ? `(${request.patient_phone})` : ''}</p>
+                                    <p><strong>Pickup:</strong> ${request.pickup_hospital} at ${new Date(request.pickup_datetime).toLocaleString()}</p>
+                                    <p><strong>Drop-off:</strong> ${request.dropoff_hospital} ${request.dropoff_datetime ? `at ${new Date(request.dropoff_datetime).toLocaleString()}` : '(Not specified)'}</p>
+                                    <button class="btn btn-sm btn-primary claim-btn" data-request-id="${request.id}">Claim Request</button>
+                                `;
+                                pendingRequestsDiv.appendChild(card);
+                            });
+
+                            // Add event listeners to the claim buttons
+                            const claimButtons = document.querySelectorAll('.claim-btn');
+                            claimButtons.forEach(button => {
+                                button.addEventListener('click', async () => {
+                                    const requestId = button.dataset.requestId;
+                                    try {
+                                        const response = await fetch(`/api/requests/${requestId}/claim`, {
+                                            method: 'POST',
+                                        });
+                                        const result = await response.json();
+                                        if (response.ok) {
+                                            alert(`Request ${requestId} claimed successfully!`);
+                                            fetchPendingRequests(); // Reload the list
+                                        } else {
+                                            alert(`Failed to claim request ${requestId}: ${result.error || 'An error occurred.'}`);
+                                        }
+                                    } catch (error) {
+                                        console.error('Error claiming request:', error);
+                                        alert('An unexpected error occurred while claiming.');
+                                    }
+                                });
+                            });
+
+                        } else {
+                            pendingRequestsDiv.innerHTML = '<p>No pending ride requests at this time.</p>';
+                        }
+                    } else {
+                        pendingRequestsDiv.innerHTML = '<p class="alert alert-danger">Failed to load pending requests.</p>';
+                    }
+                } catch (error) {
+                    console.error('Error fetching pending requests:', error);
+                    pendingRequestsDiv.innerHTML = '<p class="alert alert-danger">An unexpected error occurred while loading requests.</p>';
+                }
+            }
+
+            // Fetch pending requests when the page loads
+            fetchPendingRequests();
+        });
+    </script>
+</body>
+</html>
+
